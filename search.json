@@ -1,0 +1,58 @@
+[
+  {
+    "objectID": "about.html",
+    "href": "about.html",
+    "title": "About",
+    "section": "",
+    "text": "This project analyzes the results of the 2022 Florida General Election using R, tidyverse, and Quarto.\n\n\n\nFlorida election return data provided by the Florida Division of Elections.\nCounty boundary shape data via the R maps and sf packages.\n\n\n\n\nCreated by Nicholas Tison as part of data science coursework based on Preceptor’s Primer for Bayesian Data Science."
+  },
+  {
+    "objectID": "about.html#about-this-project",
+    "href": "about.html#about-this-project",
+    "title": "About",
+    "section": "",
+    "text": "This project analyzes the results of the 2022 Florida General Election using R, tidyverse, and Quarto.\n\n\n\nFlorida election return data provided by the Florida Division of Elections.\nCounty boundary shape data via the R maps and sf packages.\n\n\n\n\nCreated by Nicholas Tison as part of data science coursework based on Preceptor’s Primer for Bayesian Data Science."
+  },
+  {
+    "objectID": "index.html",
+    "href": "index.html",
+    "title": "Florida 2022 General Election Analysis",
+    "section": "",
+    "text": "Welcome to the Florida 2022 General Election Analysis project!\nThis website explores county-level election outcomes across Florida from the November 8, 2022 general election, featuring interactive maps and data breakdowns.\n\nKey Pages\n\nCounty Analysis: Explore interactive county maps showing candidate victory margins and vote shares for the gubernatorial election.\nAbout: Background on the project and data sources."
+  },
+  {
+    "objectID": "county.html",
+    "href": "county.html",
+    "title": "2022 Florida Gubernatorial Election Results",
+    "section": "",
+    "text": "This analysis provides an interactive visualization of county-level returns from the 2022 Florida Gubernatorial Election between Ron DeSantis (REP) and Charlie Crist (DEM).\n\n\nCode\nlibrary(tidyverse)\nlibrary(leaflet)\nlibrary(sf)\nlibrary(maps)\nlibrary(scales)"
+  },
+  {
+    "objectID": "county.html#overview",
+    "href": "county.html#overview",
+    "title": "2022 Florida Gubernatorial Election Results",
+    "section": "",
+    "text": "This analysis provides an interactive visualization of county-level returns from the 2022 Florida Gubernatorial Election between Ron DeSantis (REP) and Charlie Crist (DEM).\n\n\nCode\nlibrary(tidyverse)\nlibrary(leaflet)\nlibrary(sf)\nlibrary(maps)\nlibrary(scales)"
+  },
+  {
+    "objectID": "county.html#data-loading-preparation",
+    "href": "county.html#data-loading-preparation",
+    "title": "2022 Florida Gubernatorial Election Results",
+    "section": "Data Loading & Preparation",
+    "text": "Data Loading & Preparation\nWe load the county election returns and calculate two-party vote shares, vote counts, and victory margins.\n\n\nCode\ncounty_data &lt;- read_csv(\"data/20221108__fl__general__county.csv\")\n\n# Filter for Governor race and compute margins by county\ngov_results &lt;- county_data |&gt;\n  filter(office == \"Governor\", party %in% c(\"DEM\", \"REP\")) |&gt;\n  group_by(county, party) |&gt;\n  summarize(votes = sum(votes), .groups = \"drop\") |&gt;\n  pivot_wider(names_from = party, values_from = votes) |&gt;\n  mutate(\n    total_votes = DEM + REP,\n    rep_pct = REP / total_votes * 100,\n    dem_pct = DEM / total_votes * 100,\n    rep_margin = (REP - DEM) / total_votes * 100,\n    winner = if_else(rep_margin &gt; 0, \"DeSantis (REP)\", \"Crist (DEM)\"),\n    county_clean = str_remove_all(tolower(county), \"[. ]\")\n  )"
+  },
+  {
+    "objectID": "county.html#statewide-summary",
+    "href": "county.html#statewide-summary",
+    "title": "2022 Florida Gubernatorial Election Results",
+    "section": "Statewide Summary",
+    "text": "Statewide Summary\n\n\nCode\ngov_results |&gt;\n  summarize(\n    `DeSantis Votes` = comma(sum(REP)),\n    `DeSantis Pct` = percent(sum(REP) / sum(total_votes), accuracy = 0.1),\n    `Crist Votes` = comma(sum(DEM)),\n    `Crist Pct` = percent(sum(DEM) / sum(total_votes), accuracy = 0.1),\n    `Counties Won (DeSantis)` = sum(winner == \"DeSantis (REP)\"),\n    `Counties Won (Crist)` = sum(winner == \"Crist (DEM)\")\n  ) |&gt;\n  knitr::kable(align = \"c\")\n\n\n\n\n\n\n\n\n\n\n\n\n\nDeSantis Votes\nDeSantis Pct\nCrist Votes\nCrist Pct\nCounties Won (DeSantis)\nCounties Won (Crist)\n\n\n\n\n4,614,209\n59.8%\n3,106,313\n40.2%\n62\n5"
+  },
+  {
+    "objectID": "county.html#interactive-election-map",
+    "href": "county.html#interactive-election-map",
+    "title": "2022 Florida Gubernatorial Election Results",
+    "section": "Interactive Election Map",
+    "text": "Interactive Election Map\nZoom and hover over any county to inspect county names, vote totals, candidate shares, and victory margins.\n\n\nCode\n# Convert Florida county boundaries to an sf object\nfl_sf &lt;- st_as_sf(maps::map(\"county\", \"florida\", plot = FALSE, fill = TRUE)) |&gt;\n  st_transform(4326) |&gt;\n  mutate(\n    subregion = str_remove(ID, \"^florida,\"),\n    county_clean = str_remove_all(subregion, \"[. ]\")\n  ) |&gt;\n  left_join(gov_results, by = \"county_clean\")\n\n# Symmetrical diverging color palette (Blue = Crist, Red = DeSantis)\nmax_margin &lt;- max(abs(fl_sf$rep_margin), na.rm = TRUE)\npal &lt;- colorNumeric(\n  palette = c(\"#2166ac\", \"#f7f7f7\", \"#b2182b\"),\n  domain = c(-max_margin, max_margin)\n)\n\n# Tooltip labels for hover\nlabels &lt;- sprintf(\n  \"&lt;strong&gt;%s County&lt;/strong&gt;&lt;br/&gt;\n   Winner: &lt;b&gt;%s&lt;/b&gt;&lt;br/&gt;\n   DeSantis (REP): %s (%.1f%%)&lt;br/&gt;\n   Crist (DEM): %s (%.1f%%)&lt;br/&gt;\n   Margin: %+.1f%%\",\n  fl_sf$county,\n  fl_sf$winner,\n  comma(fl_sf$REP),\n  fl_sf$rep_pct,\n  comma(fl_sf$DEM),\n  fl_sf$dem_pct,\n  fl_sf$rep_margin\n) |&gt; lapply(htmltools::HTML)\n\n# Build interactive Leaflet map\nleaflet(fl_sf, width = \"100%\", height = \"600px\") |&gt;\n  addProviderTiles(providers$CartoDB.Positron) |&gt;\n  addPolygons(\n    fillColor = ~pal(rep_margin),\n    weight = 1.2,\n    opacity = 1,\n    color = \"white\",\n    fillOpacity = 0.8,\n    highlightOptions = highlightOptions(\n      weight = 3,\n      color = \"#333\",\n      fillOpacity = 0.95,\n      bringToFront = TRUE\n    ),\n    label = labels,\n    labelOptions = labelOptions(\n      style = list(\"font-weight\" = \"normal\", padding = \"4px 8px\"),\n      textsize = \"13px\",\n      direction = \"auto\"\n    )\n  ) |&gt;\n  addLegend(\n    pal = pal,\n    values = c(-max_margin, max_margin),\n    opacity = 0.8,\n    title = \"DeSantis Margin (%)\",\n    position = \"bottomright\"\n  )"
+  }
+]
