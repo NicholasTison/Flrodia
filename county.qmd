@@ -1,0 +1,138 @@
+---
+title: "2022 Florida Gubernatorial Election Results"
+subtitle: "Interactive County-by-County Analysis and Visualization"
+author: "Nicholas Tison"
+date: today
+format:
+  html:
+    theme: flatly
+    toc: true
+    code-fold: show
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+## Overview
+
+This analysis provides an interactive visualization of county-level returns from the 2022 Florida Gubernatorial Election between **Ron DeSantis (REP)** and **Charlie Crist (DEM)**.
+
+```{r}
+#| label: setup
+library(tidyverse)
+library(leaflet)
+library(sf)
+library(maps)
+library(scales)
+```
+
+## Data Loading & Preparation
+
+We load the county election returns and calculate two-party vote shares, vote counts, and victory margins.
+
+```{r}
+#| label: load-and-clean
+county_data <- read_csv("data/20221108__fl__general__county.csv")
+
+# Filter for Governor race and compute margins by county
+gov_results <- county_data |>
+  filter(office == "Governor", party %in% c("DEM", "REP")) |>
+  group_by(county, party) |>
+  summarize(votes = sum(votes), .groups = "drop") |>
+  pivot_wider(names_from = party, values_from = votes) |>
+  mutate(
+    total_votes = DEM + REP,
+    rep_pct = REP / total_votes * 100,
+    dem_pct = DEM / total_votes * 100,
+    rep_margin = (REP - DEM) / total_votes * 100,
+    winner = if_else(rep_margin > 0, "DeSantis (REP)", "Crist (DEM)"),
+    county_clean = str_remove_all(tolower(county), "[. ]")
+  )
+```
+
+## Statewide Summary
+
+```{r}
+#| label: statewide-summary
+gov_results |>
+  summarize(
+    `DeSantis Votes` = comma(sum(REP)),
+    `DeSantis Pct` = percent(sum(REP) / sum(total_votes), accuracy = 0.1),
+    `Crist Votes` = comma(sum(DEM)),
+    `Crist Pct` = percent(sum(DEM) / sum(total_votes), accuracy = 0.1),
+    `Counties Won (DeSantis)` = sum(winner == "DeSantis (REP)"),
+    `Counties Won (Crist)` = sum(winner == "Crist (DEM)")
+  ) |>
+  knitr::kable(align = "c")
+```
+
+## Interactive Election Map
+
+Zoom and hover over any county to inspect county names, vote totals, candidate shares, and victory margins.
+
+```{r}
+#| label: interactive-map
+
+# Convert Florida county boundaries to an sf object
+fl_sf <- st_as_sf(maps::map("county", "florida", plot = FALSE, fill = TRUE)) |>
+  st_transform(4326) |>
+  mutate(
+    subregion = str_remove(ID, "^florida,"),
+    county_clean = str_remove_all(subregion, "[. ]")
+  ) |>
+  left_join(gov_results, by = "county_clean")
+
+# Symmetrical diverging color palette (Blue = Crist, Red = DeSantis)
+max_margin <- max(abs(fl_sf$rep_margin), na.rm = TRUE)
+pal <- colorNumeric(
+  palette = c("#2166ac", "#f7f7f7", "#b2182b"),
+  domain = c(-max_margin, max_margin)
+)
+
+# Tooltip labels for hover
+labels <- sprintf(
+  "<strong>%s County</strong><br/>
+   Winner: <b>%s</b><br/>
+   DeSantis (REP): %s (%.1f%%)<br/>
+   Crist (DEM): %s (%.1f%%)<br/>
+   Margin: %+.1f%%",
+  fl_sf$county,
+  fl_sf$winner,
+  comma(fl_sf$REP),
+  fl_sf$rep_pct,
+  comma(fl_sf$DEM),
+  fl_sf$dem_pct,
+  fl_sf$rep_margin
+) |> lapply(htmltools::HTML)
+
+# Build interactive Leaflet map
+leaflet(fl_sf, width = "100%", height = "600px") |>
+  addProviderTiles(providers$CartoDB.Positron) |>
+  addPolygons(
+    fillColor = ~pal(rep_margin),
+    weight = 1.2,
+    opacity = 1,
+    color = "white",
+    fillOpacity = 0.8,
+    highlightOptions = highlightOptions(
+      weight = 3,
+      color = "#333",
+      fillOpacity = 0.95,
+      bringToFront = TRUE
+    ),
+    label = labels,
+    labelOptions = labelOptions(
+      style = list("font-weight" = "normal", padding = "4px 8px"),
+      textsize = "13px",
+      direction = "auto"
+    )
+  ) |>
+  addLegend(
+    pal = pal,
+    values = c(-max_margin, max_margin),
+    opacity = 0.8,
+    title = "DeSantis Margin (%)",
+    position = "bottomright"
+  )
+```
